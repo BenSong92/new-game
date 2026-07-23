@@ -92,6 +92,10 @@
       // 부딪혔을 때 밀쳐내는 세기(수평/수직). 기본값은 꽤 강하게(번아웃 등 "진짜 위협"용) —
       // 좁은 발판 위의 그림자처럼 살짝 겁만 줘야 하는 경우엔 개별적으로 약하게 낮춘다.
       knockH: def.knockH || 16, knockV: def.knockV || 9,
+      // true면 부딪혔을 때 (부딪힌 반대방향으로 튕겨나가는 대신) 넓은 길 방향(+z)으로
+      // 억지로 떠민다 — 유혹은 그냥 아프기만 한 게 아니라 실제로 넓은 길 쪽으로 끌고 간다.
+      // 갈림길이 없는 구간의 빌런(예: 번아웃)은 이 값을 안 주면 기존처럼 그냥 밀쳐낸다.
+      pullToWide: !!def.pullToWide,
     });
   }
   function addFork(id, def) {
@@ -257,7 +261,7 @@
     platform(34, 8, '#8a7a63', -LANE_Z);
     addVillain('v-excuse-shadow', { x: forkStart + 8, y: y + 1.4, z: -LANE_Z + 5 }, {
       name: '핑계의 그림자', chaseRadius: 17, patrolRadius: 5, speed: 8.5,
-      hitRadius: 1.9, color: '#241018', scale: 1.35,
+      hitRadius: 1.9, color: '#241018', scale: 1.35, pullToWide: true,
     });
     const gateX = forkStart + 32;
     addStatic('box', { x: gateX, y: y + 6, z: -LANE_Z - 4.2 }, { x: 3, y: 12, z: 2.4 }, '#4a3f33'); // 현관문 기둥
@@ -340,13 +344,13 @@
     if (i === 0) {
       addVillain('v-anxiety-shadow-1', { x: edge - w / 2, y: y + 1.4, z: 8 }, {
         name: '불안의 그림자', chaseRadius: 5, patrolRadius: 1.5, speed: 6,
-        hitRadius: 1.7, color: '#4a3a5a', scale: 1.5, knockH: 10, knockV: 5,
+        hitRadius: 1.7, color: '#4a3a5a', scale: 1.5, knockH: 10, knockV: 5, pullToWide: true,
       });
     }
     if (i === hillSteps - 1) {
       addVillain('v-anxiety-shadow-2', { x: edge - w / 2, y: y + 1.4, z: -8 }, {
         name: '불안의 그림자', chaseRadius: 5, patrolRadius: 1.5, speed: 6,
-        hitRadius: 1.7, color: '#4a3a5a', scale: 1.5, knockH: 10, knockV: 5,
+        hitRadius: 1.7, color: '#4a3a5a', scale: 1.5, knockH: 10, knockV: 5, pullToWide: true,
       });
     }
   }
@@ -470,7 +474,7 @@
         });
         addVillain('v-comparison-shadow', { x: px, y: py + 1.4, z: pz }, {
           name: '비교의 그림자', chaseRadius: 18, patrolRadius: 7, speed: 9,
-          hitRadius: 1.8, color: '#4a2a4a', scale: 1.3,
+          hitRadius: 1.8, color: '#4a2a4a', scale: 1.3, pullToWide: true,
         });
       }
       narrowEndX = px; narrowEndZ = pz;
@@ -526,7 +530,7 @@
     });
     addVillain('v-side-eye', { x: fieldStart + 30, y: baseY + 1.4, z: -11 }, {
       name: '눈치의 그림자', chaseRadius: 9, patrolRadius: 4, speed: 6,
-      hitRadius: 1.6, color: '#4a3a4a', scale: 1.1, knockH: 8, knockV: 4,
+      hitRadius: 1.6, color: '#4a3a4a', scale: 1.1, knockH: 8, knockV: 4, pullToWide: true,
     });
 
     edge = fieldStart + 46;

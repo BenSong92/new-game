@@ -440,12 +440,22 @@ function updateVillains(simDt, now) {
       const dz = p.body.position.z - v.pos.z;
       const hitR = v.hitRadius + PLAYER_RADIUS;
       if (dx * dx + dy * dy + dz * dz < hitR * hitR) {
-        const d = Math.hypot(dx, dz) || 1;
-        p.body.velocity.x = (dx / d) * v.knockH;
-        p.body.velocity.z = (dz / d) * v.knockH;
-        p.body.velocity.y = v.knockV;
+        if (v.pullToWide) {
+          // 유혹은 그냥 밀쳐내는 게 아니라 넓은 길(+z) 쪽으로 억지로 끌고 간다 —
+          // x는 부딪힌 반대방향(자연스러운 튕김), z는 항상 넓은 길 방향으로 고정.
+          const dSign = dx === 0 ? 1 : Math.sign(dx);
+          p.body.velocity.x = dSign * v.knockH * 0.35;
+          p.body.velocity.z = v.knockH; // 항상 +z(넓은 길) 방향
+          p.body.velocity.y = v.knockV;
+          p.socket.emit('toast', { text: `${v.name}에게 붙잡혀 넓은 길 쪽으로 떠밀렸습니다!` });
+        } else {
+          const d = Math.hypot(dx, dz) || 1;
+          p.body.velocity.x = (dx / d) * v.knockH;
+          p.body.velocity.z = (dz / d) * v.knockH;
+          p.body.velocity.y = v.knockV;
+          p.socket.emit('toast', { text: `${v.name}에게 당했습니다!` });
+        }
         p.invulnerableUntil = now + 1500;
-        p.socket.emit('toast', { text: `${v.name}에게 당했습니다!` });
         break;
       }
     }
