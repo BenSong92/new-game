@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: new-game
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
