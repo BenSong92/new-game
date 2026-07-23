@@ -342,10 +342,10 @@ function updateForks(now) {
           p.choices[fork.id] = 'wide';
           p.buffSpeedMult = FORK_WIDE_BUFF_MULT;
           p.buffSpeedUntil = now + FORK_WIDE_BUFF_MS;
-          p.socket.emit('toast', { text: `넓은 길을 선택했습니다: ${fork.wideRewardLabel}` });
+          p.socket.emit('toast', { text: `선택: ${fork.wideChoiceLabel} — ${fork.wideRewardLabel}` });
         } else if (Math.hypot(ndx, ndz) < fork.narrowTrigger.radius) {
           p.choices[fork.id] = 'narrow';
-          p.socket.emit('toast', { text: '좁은 길을 선택했습니다 — 고난이 있어도 끝까지 걸어갑니다.' });
+          p.socket.emit('toast', { text: `선택: ${fork.narrowChoiceLabel}` });
         }
       }
       if (p.choices[fork.id] === 'narrow' && p.burden > 0 && !p.crossedForks.has(fork.id)) {

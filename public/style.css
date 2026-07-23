@@ -207,7 +207,9 @@ html, body {
 }
 .victory-player-row .vp-name { font-weight: 700; color: var(--brown-2); display: flex; align-items: center; gap: 7px; }
 .victory-player-row .vp-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.victory-player-row .vp-stamps { margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap; }
+.victory-player-row .vp-stamps { margin-top: 5px; display: flex; gap: 10px; flex-wrap: wrap; }
+.victory-player-row .stamp-item { display: flex; align-items: center; gap: 5px; }
+.victory-player-row .stamp-label { font-size: 12px; color: var(--brown-1); }
 .victory-player-row .vp-note { margin-top: 4px; color: var(--brown-1); font-size: 12.5px; }
 
 .confetti-piece {

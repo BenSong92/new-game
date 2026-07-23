@@ -102,6 +102,10 @@
       narrowTrigger: def.narrowTrigger,
       crossTrigger: def.crossTrigger,
       dilemmaText: def.dilemmaText,
+      // 표지판/토스트에 그대로 쓰이는 "실제 선택지" 문구 — "넓은 길/좁은 길"이라는 추상적
+      // 이름만으로는 뭘 고르는 건지 알 수 없으므로, 매 갈림길마다 구체적인 행동으로 적는다.
+      wideChoiceLabel: def.wideChoiceLabel,
+      narrowChoiceLabel: def.narrowChoiceLabel,
       wideRewardLabel: def.wideRewardLabel || '세상의 보상',
     });
     return forks[forks.length - 1];
@@ -187,6 +191,8 @@
       narrowTrigger: { pos: { x: narrowEndPiece.pos.x, y: yNarrow + 1, z: -LANE_Z }, radius: 5 },
       crossTrigger: { pos: { x: edge - 8, y: y + 1, z: -LANE_Z * 0.4 }, radius: 5 },
       dilemmaText: '잠의 유혹 — 밤새 공부하느라 3시간밖에 못 잤다. 주일 아침, 더 잘까 예배로 향할까?',
+      wideChoiceLabel: '계속 잔다',
+      narrowChoiceLabel: '피곤해도 일어난다',
       wideRewardLabel: '피로 회복의 안락함 (짧은 이동속도 상승)',
     });
     addCheckpoint('cp0b', { x: edge - 6, y: y + 1, z: 0 }, 6, '알람시계를 넘어서다');
@@ -279,6 +285,8 @@
       narrowTrigger: { pos: { x: narrowEndPiece.pos.x, y: yNarrow + 1, z: -LANE_Z }, radius: 5 },
       crossTrigger: { pos: { x: edge - 7, y: y + 1, z: -LANE_Z * 0.4 }, radius: 5 },
       dilemmaText: '관계의 방 — 부모님과 5시 귀가 약속을 했다. 친구들은 "지금이 피크인데"라며 붙잡는다. 어떻게 할까?',
+      wideChoiceLabel: '친구들과 더 논다',
+      narrowChoiceLabel: '약속대로 집에 간다',
       wideRewardLabel: '친구들과의 달콤한 시간',
     });
     addCheckpoint('cp2', { x: edge - 6, y: y + 1, z: 0 }, 6, '귀가길의 문을 지나다');
@@ -490,6 +498,8 @@
       narrowTrigger: { pos: { x: narrowEndX, y: yNarrow + 1, z: narrowEndZ }, radius: 6 },
       crossTrigger: { pos: { x: edge - 8, y: y + 1, z: -4 }, radius: 6 },
       dilemmaText: 'SNS 유혹 — 설교 중 단톡방 알림이 쉴 새 없이 울린다. 지금 열어볼까, 참고 집중할까?',
+      wideChoiceLabel: '메시지를 확인한다',
+      narrowChoiceLabel: '참고 집중한다',
       wideRewardLabel: '시원한 방에서의 10분 휴식',
     });
     addCheckpoint('cp5', { x: edge - 8, y: y + 1, z: 0 }, 8, '피드의 소용돌이를 벗어나다');
@@ -526,6 +536,8 @@
       narrowTrigger: { pos: { x: fieldStart + 24, y: baseY + 1, z: -11 }, radius: 6 },
       crossTrigger: { pos: { x: fieldStart + 40, y: baseY + 1, z: -6 }, radius: 6 },
       dilemmaText: '방관자의 벌판 — 조 편성에서 혼자 남은 친구가 눈치를 본다. 조원들은 "모른 척하라"고 한다. 손을 내밀까?',
+      wideChoiceLabel: '모르는 척 지나간다',
+      narrowChoiceLabel: '다가가서 손을 내민다',
       wideRewardLabel: '무리 없이 지나가는 편안함',
     });
     addCheckpoint('cp5b', { x: fieldStart + 42, y: baseY + 1, z: 0 }, 6, '방관자의 벌판을 지나다');

@@ -89,6 +89,9 @@ function cacheDom() {
   els.burdenHud = document.getElementById('burden-hud');
   els.stampHud = document.getElementById('stamp-hud');
   els.victorySummary = document.getElementById('victory-summary');
+  els.victoryTitle = document.getElementById('victory-title');
+  els.victoryDesc1 = document.getElementById('victory-desc1');
+  els.victoryDesc2 = document.getElementById('victory-desc2');
 }
 
 function bindTouchControls() {
@@ -164,6 +167,7 @@ function joinGame() {
   socket.on('state', onState);
   socket.on('victory', (data) => {
     renderVictorySummary(data);
+    applyVictoryMessage(data);
     els.victory.classList.remove('hidden');
     spawnConfetti(140);
   });
@@ -202,10 +206,12 @@ function renderVictorySummary(data) {
   const forkOrder = data.forkOrder || [];
   els.victorySummary.innerHTML = data.players.map((p) => {
     const stamps = forkOrder.map((forkId) => {
+      const fork = LEVEL.forks.find((f) => f.id === forkId);
       const choice = p.choices ? p.choices[forkId] : null;
       const cls = choice === 'narrow' ? 'narrow' : (choice === 'wide' ? 'wide' : '');
       const icon = choice === 'narrow' ? '좁' : (choice === 'wide' ? '넓' : '?');
-      return `<span class="stamp-slot ${cls}">${icon}</span>`;
+      const label = !fork ? '' : (choice === 'narrow' ? fork.narrowChoiceLabel : (choice === 'wide' ? fork.wideChoiceLabel : '선택 안 함'));
+      return `<span class="stamp-item"><span class="stamp-slot ${cls}">${icon}</span><span class="stamp-label">${escapeHtml(label)}</span></span>`;
     }).join('');
     return `
       <div class="victory-player-row">
@@ -214,6 +220,25 @@ function renderVictorySummary(data) {
         <div class="vp-note">남은 죄의 짐: ${p.burden}/4 · 양심의 선택: ${p.conscienceCount}/${data.conscienceTotal || 0}</div>
       </div>`;
   }).join('');
+}
+
+// 넓은 길을 한 번이라도 골랐는지(burden>0)에 따라 결말 문구를 다르게 보여준다 —
+// "좁은 길을 끝까지 걸어온 사람만" 지금의 축하 문구를 보고, 나머지는 다른 문구를 본다.
+// 플레이어마다 각자 자신의 기록으로 보므로 같은 화면에서도 사람마다 문구가 다를 수 있다.
+function applyVictoryMessage(data) {
+  const self = data && data.players && data.players.find((p) => p.id === myId);
+  const wentAllNarrow = !!self && self.burden === 0;
+  if (!els.victoryTitle) return;
+  if (wentAllNarrow) {
+    els.victoryTitle.textContent = '진짜 쉼에 도착했습니다';
+    els.victoryDesc1.textContent = '"내가 선한 싸움을 싸우고 나의 달려갈 길을 마치고 믿음을 지켰으니"';
+    els.victoryDesc2.textContent = '좁은 길을 끝까지 걸어왔습니다. 모든 짐을 내려놓고 도착했습니다!';
+  } else {
+    const burden = self ? self.burden : 4;
+    els.victoryTitle.textContent = '도착은 했지만...';
+    els.victoryDesc1.textContent = '넓은 길에서 잠깐은 편했지만, 죄의 짐은 끝내 다 내려놓지 못했습니다.';
+    els.victoryDesc2.textContent = `남은 죄의 짐: ${burden}/4 — 다음엔 좁은 길로 한번 걸어보는 건 어떨까요?`;
+  }
 }
 
 function renderRoster(list) {
@@ -443,13 +468,13 @@ function buildConscienceMeshes() {
   });
 }
 
-// ---------- 갈림길 레인 입구 표지판: "넓은 길" / "좁은 길" ----------
+// ---------- 갈림길 레인 입구 표지판: "넓은 길/좁은 길" 대신 실제로 뭘 선택하는지 그대로 보여준다 ----------
 function buildForkSigns() {
   LEVEL.forks.forEach((fork) => {
-    const wideSign = makeTextSprite('넓은 길', { scale: 3.4, bg: 'rgba(201,165,63,0.9)', color: '#2a1a06' });
+    const wideSign = makeTextSprite(fork.wideChoiceLabel || '넓은 길', { scale: 3.4, bg: 'rgba(201,165,63,0.9)', color: '#2a1a06' });
     wideSign.position.set(fork.wideTrigger.pos.x, fork.wideTrigger.pos.y + 3.5, fork.wideTrigger.pos.z);
     scene.add(wideSign);
-    const narrowSign = makeTextSprite('좁은 길', { scale: 3.4, bg: 'rgba(74,63,51,0.9)', color: '#fce9bb' });
+    const narrowSign = makeTextSprite(fork.narrowChoiceLabel || '좁은 길', { scale: 3.4, bg: 'rgba(74,63,51,0.9)', color: '#fce9bb' });
     narrowSign.position.set(fork.narrowTrigger.pos.x, fork.narrowTrigger.pos.y + 3.5, fork.narrowTrigger.pos.z);
     scene.add(narrowSign);
   });
@@ -607,7 +632,8 @@ function updateStampHud(self) {
     const c = choices[f.id];
     const cls = c === 'narrow' ? 'narrow' : (c === 'wide' ? 'wide' : '');
     const icon = c === 'narrow' ? '좁' : (c === 'wide' ? '넓' : '?');
-    return `<span class="stamp-slot ${cls}">${icon}</span>`;
+    const label = c === 'narrow' ? f.narrowChoiceLabel : (c === 'wide' ? f.wideChoiceLabel : '아직 선택 전');
+    return `<span class="stamp-slot ${cls}" title="${escapeHtml(label)}">${icon}</span>`;
   }).join('');
 }
 
