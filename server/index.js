@@ -38,12 +38,15 @@ const COLORS = ['#c0392b', '#2e7d32', '#1f6fb2', '#c99a2e', '#8e44ad', '#16a085'
 // 임펄스로 "부딪힌" 느낌). 빌런/장애물과 완전히 같은 패턴.
 const PLAYER_PUSH_DIST = PLAYER_RADIUS * 2 * 0.92;
 const PLAYER_PUSH_KICK_MAX = 6;
-// 잡기: 버튼을 누른 채 가까이 가면 자동으로 붙잡는다. 잡힌 쪽은 크게 느려지고(끌려가는 느낌),
-// 잡은 쪽도 살짝 느려진다(공짜로 상대를 묶어두지 못하게). 버튼을 떼거나 너무 멀어지면 풀린다.
+// 잡기: 버튼을 누른 채 가까이 가면 자동으로 붙잡는다. 잡힌 쪽은 크게 느려지고, 잡은 쪽도
+// 살짝 느려진다(공짜로 상대를 묶어두지 못하게). 매 틱 잡힌 쪽을 잡은 쪽 위치 쪽으로 직접
+// 끌어당겨(포지션 보정, 밀치기와 같은 방식) 실제로 "끌려오는" 느낌을 준다 — 속도만 깎으면
+// 잡은 사람이 움직여도 상대가 안 따라오므로 반드시 필요하다. 버튼을 떼거나 너무 멀어지면 풀린다.
 const GRAB_RADIUS = 2.6;
 const GRAB_BREAK_DIST = 4.5;
 const GRABBED_SPEED_MULT = 0.35;
 const GRABBING_SPEED_MULT = 0.85;
+const GRAB_PULL_STRENGTH = 0.15; // 틱마다 남은 거리의 15%만큼 끌려옴
 
 // ---------- 방(room) ----------
 // 부하 테스트 결과 한 방에 60Hz 틱이 안정적으로 유지되는 인원은 약 10~15명이었다.
@@ -501,6 +504,20 @@ class Room {
         nearest.grabbedBy = p.id;
         p.socket.emit('toast', { text: `${nearest.name}을(를) 붙잡았습니다!` });
         nearest.socket.emit('toast', { text: `${p.name}에게 붙잡혔습니다!` });
+      }
+    });
+    // 끌어당기기: 잡고 있는 사람이 움직이면 잡힌 사람이 실제로 따라오도록, 매 틱 잡은
+    // 사람 위치 쪽으로 남은 거리의 일부만큼 직접 끌어당긴다(밀치기와 같은 포지션 보정 방식).
+    this.players.forEach((p) => {
+      if (!p.grabbing) return;
+      const target = this.players.get(p.grabbing);
+      if (!target) return;
+      const dx = p.body.position.x - target.body.position.x;
+      const dz = p.body.position.z - target.body.position.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 0.2) {
+        target.body.position.x += dx * GRAB_PULL_STRENGTH;
+        target.body.position.z += dz * GRAB_PULL_STRENGTH;
       }
     });
   }
