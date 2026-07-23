@@ -458,12 +458,14 @@ function buildNpcMeshes() {
 
 // ---------- 양심의 선택: 안내 없이 놓인 작은 물건 (수집돼도 특별한 시각효과 없음) ----------
 function buildConscienceMeshes() {
-  const geo = new THREE.BoxGeometry(0.9, 0.7, 0.9);
-  const mat = new THREE.MeshLambertMaterial({ color: '#6b6558' });
+  // 바닥 자연물처럼 보이지 않게, 누가 봐도 "떨어진 쓰레기"로 읽히는 색/형태(찌그러져 나뒹구는
+  // 캔)를 쓴다 — 뭘 하는 물건인지는 여전히 설명하지 않는다.
+  const geo = new THREE.CylinderGeometry(0.32, 0.32, 0.55, 10);
+  const mat = new THREE.MeshLambertMaterial({ color: '#c0392b' });
   LEVEL.conscienceItems.forEach((item) => {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(item.pos.x, item.pos.y, item.pos.z);
-    mesh.rotation.set(0.3, 0.6, 0.15);
+    mesh.rotation.set(Math.PI / 2 + 0.2, 0.5, 0.3); // 쓰러져 굴러다니는 캔처럼 눕혀놓기
     scene.add(mesh);
   });
 }
