@@ -19,6 +19,7 @@
       길목마다 넓은 길과 좁은 길 중 하나를 직접 달려가 선택하세요 — 좁은 길은 힘들지만
       죄의 짐을 내려놓을 수 있습니다.<br/>
       길 위의 인물들에게서 퀘스트와 축복을 받고, 마음속 그림자들을 피하세요.<br/>
+      다른 순례자와는 서로 밀치거나 붙잡을 수도 있습니다.<br/>
       모든 순례자가 도착해야 진짜 승리입니다.
     </p>
     <input id="name-input" class="name-input" type="text" maxlength="16" placeholder="순례자의 이름을 입력하세요" />
@@ -34,8 +35,8 @@
     </div>
     <p id="lobby-status" class="controls-hint"></p>
     <p class="controls-hint">
-      PC: W/A/S/D 또는 방향키 이동 · 스페이스바 점프 · 마우스 드래그 시점 회전<br/>
-      모바일: 왼쪽 스틱으로 이동 · 오른쪽 점프 버튼 · 화면 드래그로 시점 회전
+      PC: W/A/S/D 또는 방향키 이동 · 스페이스바 점프 · E키(누르고 있기)로 주변 사람 붙잡기 · 마우스 드래그 시점 회전<br/>
+      모바일: 왼쪽 스틱으로 이동 · 오른쪽 점프 버튼 · "잡기" 버튼(누르고 있기) · 화면 드래그로 시점 회전
     </p>
   </div>
 </section>
@@ -62,6 +63,7 @@
     <div id="joystick-knob" class="joystick-knob"></div>
   </div>
   <button id="jump-button" class="jump-button">점프</button>
+  <button id="grab-button" class="grab-button">잡기</button>
 </section>
 
 <!-- ===================== 승리 화면 ===================== -->

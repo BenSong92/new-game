@@ -31,6 +31,20 @@ const MIN_JUMP_INTERVAL_MS = 300;
 
 const COLORS = ['#c0392b', '#2e7d32', '#1f6fb2', '#c99a2e', '#8e44ad', '#16a085', '#d35400', '#7f8c8d'];
 
+// ---------- 플레이어 상호작용 (폴 가이즈처럼 서로 밀치고 잡을 수 있게) ----------
+// 플레이어끼리는 cannon 바디 충돌을 안 쓴다 — 이동 모델이 매 틱 velocity를 강제 지정하는
+// 방식이라(위 gotcha와 동일한 이유) 카논의 충돌 반응이 다음 틱에 덮어써져 무력화된다.
+// 대신 거리 계산으로 직접 겹침을 보정한다(위치를 절반씩 밀어내 확실히 분리 + 살짝의 속도
+// 임펄스로 "부딪힌" 느낌). 빌런/장애물과 완전히 같은 패턴.
+const PLAYER_PUSH_DIST = PLAYER_RADIUS * 2 * 0.92;
+const PLAYER_PUSH_KICK_MAX = 6;
+// 잡기: 버튼을 누른 채 가까이 가면 자동으로 붙잡는다. 잡힌 쪽은 크게 느려지고(끌려가는 느낌),
+// 잡은 쪽도 살짝 느려진다(공짜로 상대를 묶어두지 못하게). 버튼을 떼거나 너무 멀어지면 풀린다.
+const GRAB_RADIUS = 2.6;
+const GRAB_BREAK_DIST = 4.5;
+const GRABBED_SPEED_MULT = 0.35;
+const GRABBING_SPEED_MULT = 0.85;
+
 // ---------- 방(room) ----------
 // 부하 테스트 결과 한 방에 60Hz 틱이 안정적으로 유지되는 인원은 약 10~15명이었다.
 // 방 하나당 최대 인원을 10명으로 제한하고, 꽉 차면 새 방을 만들거나 다른 방을 고르게 한다.
@@ -231,7 +245,7 @@ class Room {
       color,
       body,
       yaw: 0,
-      input: { x: 0, z: 0, jump: false },
+      input: { x: 0, z: 0, jump: false, grab: false },
       prevInputJump: false,
       wasGrounded: false,
       lastGroundedAt: -Infinity,
@@ -254,6 +268,9 @@ class Room {
       buffJumpMult: 1, buffJumpUntil: 0,
       shield: false,
       invulnerableUntil: 0,
+      // ---- 밀치기/잡기 ----
+      grabbing: null,   // 내가 붙잡고 있는 상대 id
+      grabbedBy: null,  // 나를 붙잡고 있는 상대 id
     };
     this.players.set(socket.id, player);
     return player;
@@ -262,6 +279,11 @@ class Room {
   removePlayer(socket) {
     const p = this.players.get(socket.id);
     if (!p) return;
+    this.releaseGrab(p); // 내가 잡고 있던 상대를 풀어준다
+    if (p.grabbedBy) {
+      const grabber = this.players.get(p.grabbedBy);
+      if (grabber) grabber.grabbing = null;
+    }
     this.world.removeBody(p.body);
     this.players.delete(socket.id);
   }
@@ -417,6 +439,72 @@ class Room {
     });
   }
 
+  // ---------- 플레이어끼리 서로 밀치기(자동) ----------
+  // 겹치면 위치를 절반씩 직접 밀어내(포지션 보정) 확실히 분리시키고, 속도에도 살짝
+  // 얹어서 "부딪힌" 느낌을 준다. 위/아래로 멀리 떨어져 있으면(다른 층/발판) 무시한다.
+  updatePlayerPush() {
+    const list = Array.from(this.players.values());
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i], b = list[j];
+        const dy = b.body.position.y - a.body.position.y;
+        if (Math.abs(dy) > PLAYER_RADIUS * 1.6) continue;
+        const dx = b.body.position.x - a.body.position.x;
+        const dz = b.body.position.z - a.body.position.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 0.001 && dist < PLAYER_PUSH_DIST) {
+          const nx = dx / dist, nz = dz / dist;
+          const overlap = PLAYER_PUSH_DIST - dist;
+          const half = overlap / 2;
+          a.body.position.x -= nx * half;
+          a.body.position.z -= nz * half;
+          b.body.position.x += nx * half;
+          b.body.position.z += nz * half;
+          const kick = Math.min(overlap * 6, PLAYER_PUSH_KICK_MAX);
+          a.body.velocity.x -= nx * kick;
+          a.body.velocity.z -= nz * kick;
+          b.body.velocity.x += nx * kick;
+          b.body.velocity.z += nz * kick;
+        }
+      }
+    }
+  }
+
+  // ---------- 잡기: 버튼을 누른 채 가까이 가면 자동으로 붙잡는다 ----------
+  releaseGrab(p) {
+    if (!p.grabbing) return;
+    const target = this.players.get(p.grabbing);
+    if (target) target.grabbedBy = null;
+    p.grabbing = null;
+  }
+
+  updateGrabs() {
+    // 먼저 풀어야 할 것부터: 버튼을 뗐거나 너무 멀어진 경우
+    this.players.forEach((p) => {
+      if (!p.grabbing) return;
+      const target = this.players.get(p.grabbing);
+      if (!target || !p.input.grab) { this.releaseGrab(p); return; }
+      const d = Math.hypot(target.body.position.x - p.body.position.x, target.body.position.z - p.body.position.z);
+      if (d > GRAB_BREAK_DIST) this.releaseGrab(p);
+    });
+    // 새로 잡기 시도: 이미 다른 사람에게 잡혀있는 사람은 대상에서 제외
+    this.players.forEach((p) => {
+      if (!p.input.grab || p.grabbing) return;
+      let nearest = null, nearestDist = GRAB_RADIUS;
+      this.players.forEach((other) => {
+        if (other.id === p.id || other.grabbedBy) return;
+        const d = Math.hypot(other.body.position.x - p.body.position.x, other.body.position.z - p.body.position.z);
+        if (d < nearestDist) { nearestDist = d; nearest = other; }
+      });
+      if (nearest) {
+        p.grabbing = nearest.id;
+        nearest.grabbedBy = p.id;
+        p.socket.emit('toast', { text: `${nearest.name}을(를) 붙잡았습니다!` });
+        nearest.socket.emit('toast', { text: `${p.name}에게 붙잡혔습니다!` });
+      }
+    });
+  }
+
   // ---------- 빌런 AI: anchor 주변을 서성이다 플레이어가 가까이 오면 쫓아온다 ----------
   updateVillains(simDt, now) {
     this.villainStates.forEach((v) => {
@@ -533,7 +621,8 @@ class Room {
       p.prevInputJump = p.input.jump;
 
       const burdenMult = 1 - p.burden * 0.035;
-      const speedMult = (now < p.buffSpeedUntil ? p.buffSpeedMult : 1) * burdenMult;
+      const grabMult = (p.grabbedBy ? GRABBED_SPEED_MULT : 1) * (p.grabbing ? GRABBING_SPEED_MULT : 1);
+      const speedMult = (now < p.buffSpeedUntil ? p.buffSpeedMult : 1) * burdenMult * grabMult;
       p.body.velocity.x = p.input.x * MAX_SPEED * speedMult;
       p.body.velocity.z = p.input.z * MAX_SPEED * speedMult;
 
@@ -562,6 +651,8 @@ class Room {
     });
 
     this.world.step(DT, timeSinceLastCalled, 5);
+    this.updatePlayerPush();
+    this.updateGrabs();
     this.updateVillains(simDt, now);
     this.updateHazards(t, now);
     this.updateForks(now);
@@ -621,6 +712,8 @@ class Room {
         burden: p.burden,
         choices: p.choices,
         conscienceCount: p.conscienceCollected.size,
+        grabbing: p.grabbing,
+        grabbedBy: p.grabbedBy,
         buffs: {
           speedUntil: p.buffSpeedUntil,
           jumpUntil: p.buffJumpUntil,
@@ -688,6 +781,7 @@ io.on('connection', (socket) => {
     p.input.x = clampNum(data.x, -1, 1);
     p.input.z = clampNum(data.z, -1, 1);
     p.input.jump = !!data.jump;
+    p.input.grab = !!data.grab;
     p.yaw = typeof data.yaw === 'number' ? data.yaw : p.yaw;
   });
 

@@ -127,7 +127,7 @@ html, body {
 }
 
 /* ---------- 모바일 가상 조작 (터치 기기에서만 표시) ---------- */
-.joystick-base, .jump-button { display: none; }
+.joystick-base, .jump-button, .grab-button { display: none; }
 
 @media (pointer: coarse) {
   .joystick-base {
@@ -169,6 +169,24 @@ html, body {
     z-index: 15;
   }
   .jump-button:active { background: rgba(140,59,46,0.95); }
+
+  .grab-button {
+    display: block;
+    position: absolute;
+    right: max(28px, env(safe-area-inset-right));
+    bottom: max(140px, calc(env(safe-area-inset-bottom) + 100px));
+    width: 68px; height: 68px;
+    border-radius: 50%;
+    background: rgba(74,58,90,0.75);
+    border: 2px solid rgba(252,233,187,0.6);
+    color: #fce9bb;
+    font-family: inherit;
+    font-weight: 700;
+    font-size: 13px;
+    touch-action: none;
+    z-index: 15;
+  }
+  .grab-button:active { background: rgba(74,58,90,0.95); }
 
   .world-hud { padding: 12px 14px; }
   .chapter-label { font-size: 16px; }

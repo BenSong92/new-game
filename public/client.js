@@ -11,11 +11,13 @@ let serverOffset = 0;
 let camYaw = Math.PI / 2; // 코스가 +X 방향으로 이어지므로 기본 카메라가 그 방향을 보게 함
 const keys = {};
 let touchJumpHeld = false; // 점프 버튼을 누르고 있는 동안 true (가변 점프 높이 판정에 필요)
+let touchGrabHeld = false; // 잡기 버튼을 누르고 있는 동안 true
 let dragging = false, dragPointerId = null, lastPointerX = 0;
 const touchMove = { active: false, ix: 0, iz: 0, pointerId: null };
 
 const entities = new Map(); // id -> { mesh, name, color, current:{x,y,z}, target:{x,y,z}, yaw }
 const kinematicMeshes = []; // parallel to LEVEL.kinematics
+const grabLines = new Map(); // "grabberId|targetId" -> THREE.Line (붙잡고 있는 동안만 존재)
 
 // 구역(체크포인트)마다 하늘/안개/조명을 다르게 해서 천로역정 각 단계의 분위기를 낸다.
 // 구역이 바뀔 때 색이 뚝 끊기지 않도록 loop()에서 매 프레임 targetTheme 쪽으로 서서히 보간한다.
@@ -89,6 +91,7 @@ function cacheDom() {
   els.joystickBase = document.getElementById('joystick-base');
   els.joystickKnob = document.getElementById('joystick-knob');
   els.jumpButton = document.getElementById('jump-button');
+  els.grabButton = document.getElementById('grab-button');
   els.questStatus = document.getElementById('quest-status');
   els.buffStatus = document.getElementById('buff-status');
   els.burdenHud = document.getElementById('burden-hud');
@@ -142,6 +145,15 @@ function bindTouchControls() {
   els.jumpButton.addEventListener('pointerup', releaseJumpButton);
   els.jumpButton.addEventListener('pointercancel', releaseJumpButton);
   els.jumpButton.addEventListener('pointerleave', releaseJumpButton);
+
+  els.grabButton.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    touchGrabHeld = true;
+  });
+  const releaseGrabButton = () => { touchGrabHeld = false; };
+  els.grabButton.addEventListener('pointerup', releaseGrabButton);
+  els.grabButton.addEventListener('pointercancel', releaseGrabButton);
+  els.grabButton.addEventListener('pointerleave', releaseGrabButton);
 }
 
 function bindUi() {
@@ -590,6 +602,41 @@ function ensureEntity(p) {
   return e;
 }
 
+// ---------- 잡기: 붙잡고 있는 동안 두 사람 사이에 줄을 그려준다 ----------
+function syncGrabLines(players) {
+  const activeKeys = new Set();
+  players.forEach((p) => {
+    if (!p.grabbing) return;
+    const key = p.id + '|' + p.grabbing;
+    activeKeys.add(key);
+    if (!grabLines.has(key)) {
+      const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+      const mat = new THREE.LineBasicMaterial({ color: '#ff5533', linewidth: 3 });
+      const line = new THREE.Line(geo, mat);
+      scene.add(line);
+      grabLines.set(key, line);
+    }
+  });
+  Array.from(grabLines.keys()).forEach((key) => {
+    if (!activeKeys.has(key)) {
+      scene.remove(grabLines.get(key));
+      grabLines.delete(key);
+    }
+  });
+}
+
+function updateGrabLinePositions() {
+  grabLines.forEach((line, key) => {
+    const [fromId, toId] = key.split('|');
+    const a = entities.get(fromId), b = entities.get(toId);
+    if (!a || !b) return;
+    const pos = line.geometry.attributes.position;
+    pos.setXYZ(0, a.current.x, a.current.y + 1.5, a.current.z);
+    pos.setXYZ(1, b.current.x, b.current.y + 1.5, b.current.z);
+    pos.needsUpdate = true;
+  });
+}
+
 let prevSelfPos = null;
 let hasArrivedBefore = false;
 function onState(data) {
@@ -611,6 +658,7 @@ function onState(data) {
   });
 
   (data.villains || []).forEach((v) => ensureVillainEntity(v));
+  syncGrabLines(data.players);
 
   const self = data.players.find((p) => p.id === myId);
   if (self) {
@@ -625,7 +673,7 @@ function onState(data) {
       applyZoneTheme(cp.id);
     }
     updateQuestHud(self);
-    updateBuffHud(self);
+    updateBuffHud(self, data.players);
     updateBurdenHud(self);
     updateStampHud(self);
     if (self.arrived && !hasArrivedBefore) {
@@ -657,13 +705,21 @@ function updateQuestHud(self) {
   });
 }
 
-function updateBuffHud(self) {
+function updateBuffHud(self, players) {
   const now = Date.now() + serverOffset;
   const chips = [];
   if (self.buffs) {
     if (self.buffs.speedUntil > now) chips.push(`⚡ 속도 강화 ${Math.ceil((self.buffs.speedUntil - now) / 1000)}초`);
     if (self.buffs.jumpUntil > now) chips.push(`⬆ 점프 강화 ${Math.ceil((self.buffs.jumpUntil - now) / 1000)}초`);
     if (self.buffs.shield) chips.push('🛡 천상의 갑주');
+  }
+  if (self.grabbing) {
+    const target = players && players.find((p) => p.id === self.grabbing);
+    chips.push(`🤝 ${target ? target.name : '누군가'}을(를) 붙잡는 중`);
+  }
+  if (self.grabbedBy) {
+    const grabber = players && players.find((p) => p.id === self.grabbedBy);
+    chips.push(`⚠ ${grabber ? grabber.name : '누군가'}에게 붙잡힘`);
   }
   els.buffStatus.innerHTML = chips.map((c) => `<span class="buff-chip">${escapeHtml(c)}</span>`).join('');
 }
@@ -724,7 +780,8 @@ function sendInput() {
     e.yaw = Math.atan2(move.x, move.z);
   }
   const jumpHeld = !!keys[' '] || touchJumpHeld;
-  socket.emit('input', { x: move.x, z: move.z, jump: jumpHeld, yaw: e ? e.yaw : 0 });
+  const grabHeld = !!keys['e'] || touchGrabHeld;
+  socket.emit('input', { x: move.x, z: move.z, jump: jumpHeld, grab: grabHeld, yaw: e ? e.yaw : 0 });
 }
 
 // ---------- loop ----------
@@ -777,6 +834,8 @@ function loop() {
       e.mesh.position.set(e.current.x, e.current.y, e.current.z);
       animateWalk(e, dt); // 내부에서 prevX/prevZ를 이번 프레임 값으로 갱신함
     });
+
+    updateGrabLinePositions();
 
     const self = entities.get(myId);
     if (self) {
