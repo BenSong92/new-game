@@ -22,8 +22,15 @@
       모든 순례자가 도착해야 진짜 승리입니다.
     </p>
     <input id="name-input" class="name-input" type="text" maxlength="16" placeholder="순례자의 이름을 입력하세요" />
-    <div class="title-buttons">
-      <button id="btn-join" class="btn primary">순례 시작하기</button>
+    <div class="room-section">
+      <p class="room-section-label">함께할 방을 골라주세요 (방 하나당 최대 10명)</p>
+      <div id="room-list" class="room-list">
+        <p class="room-list-loading">방 목록을 불러오는 중...</p>
+      </div>
+      <div class="title-buttons">
+        <button id="btn-new-room" class="btn primary">새 방 만들기</button>
+        <button id="btn-refresh-rooms" class="btn">새로고침</button>
+      </div>
     </div>
     <p id="lobby-status" class="controls-hint"></p>
     <p class="controls-hint">

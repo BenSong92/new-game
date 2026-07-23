@@ -52,6 +52,22 @@ html, body {
 .title-buttons { display: flex; gap: 14px; justify-content: center; margin: 20px 0 12px; }
 .controls-hint { font-size: 12.5px; color: var(--brown-1); opacity: 0.85; line-height: 1.8; margin-top: 10px; }
 
+/* ---------- 방 선택 ---------- */
+.room-section { margin-top: 18px; }
+.room-section-label { font-size: 13px; color: var(--brown-1); margin: 0 0 8px; }
+.room-list {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  max-height: 160px; overflow-y: auto; padding: 4px 2px;
+}
+.room-list-loading { font-size: 13px; color: var(--brown-1); opacity: 0.8; margin: 6px 0; }
+.room-item {
+  font-family: inherit; font-size: 13.5px; padding: 8px 14px; border-radius: 8px;
+  border: 2px solid var(--brown-1); background: var(--sand-1); color: var(--ink);
+  cursor: pointer; transition: transform 0.08s ease, background 0.15s ease;
+}
+.room-item:hover:not(:disabled) { background: var(--sand-2); transform: translateY(-1px); }
+.room-item.full, .room-item:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ---------- world ---------- */
 #screen-world { position: relative; }
 #canvas-wrap { position: absolute; inset: 0; touch-action: none; }

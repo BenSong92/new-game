@@ -65,6 +65,9 @@ function init() {
   window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
   window.addEventListener('resize', onResize);
 
+  fetchRooms();
+  roomPollTimer = setInterval(fetchRooms, 4000);
+
   clock = new THREE.Clock();
   requestAnimationFrame(loop);
 }
@@ -73,7 +76,9 @@ function cacheDom() {
   els.lobby = document.getElementById('screen-lobby');
   els.world = document.getElementById('screen-world');
   els.nameInput = document.getElementById('name-input');
-  els.btnJoin = document.getElementById('btn-join');
+  els.roomList = document.getElementById('room-list');
+  els.btnNewRoom = document.getElementById('btn-new-room');
+  els.btnRefreshRooms = document.getElementById('btn-refresh-rooms');
   els.lobbyStatus = document.getElementById('lobby-status');
   els.canvasWrap = document.getElementById('canvas-wrap');
   els.zoneName = document.getElementById('zone-name');
@@ -140,28 +145,79 @@ function bindTouchControls() {
 }
 
 function bindUi() {
-  els.btnJoin.addEventListener('click', joinGame);
-  els.nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinGame(); });
+  els.btnNewRoom.addEventListener('click', () => joinGame('new'));
+  els.btnRefreshRooms.addEventListener('click', fetchRooms);
+  els.nameInput.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    // 엔터는 가장 자리가 넉넉한 기존 방으로 바로 입장(없으면 새 방)하는 단축키
+    const open = (lastRoomList || []).find((r) => r.count < r.max);
+    joinGame(open ? open.id : 'new');
+  });
 }
 
-function joinGame() {
+// ---------- 방 목록 ----------
+let roomPollTimer = null;
+let lastRoomList = [];
+
+async function fetchRooms() {
+  try {
+    const res = await fetch('/api/rooms');
+    lastRoomList = await res.json();
+    renderRoomList(lastRoomList);
+  } catch (e) {
+    els.roomList.innerHTML = '<p class="room-list-loading">방 목록을 불러올 수 없습니다.</p>';
+  }
+}
+
+function renderRoomList(rooms) {
+  if (!rooms.length) {
+    els.roomList.innerHTML = '<p class="room-list-loading">열린 방이 없습니다 — "새 방 만들기"로 시작해주세요.</p>';
+    return;
+  }
+  els.roomList.innerHTML = rooms.map((r) => {
+    const full = r.count >= r.max;
+    return `<button class="room-item${full ? ' full' : ''}" data-room-id="${escapeHtml(r.id)}" ${full ? 'disabled' : ''}>방 ${escapeHtml(r.id)} · ${r.count}/${r.max}명${full ? ' (가득 참)' : ''}</button>`;
+  }).join('');
+  els.roomList.querySelectorAll('.room-item').forEach((btn) => {
+    btn.addEventListener('click', () => joinGame(btn.dataset.roomId));
+  });
+}
+
+function setLobbyBusy(busy) {
+  els.btnNewRoom.disabled = busy;
+  els.btnRefreshRooms.disabled = busy;
+  els.roomList.querySelectorAll('.room-item').forEach((b) => { b.disabled = busy || b.classList.contains('full'); });
+}
+
+function joinGame(roomId) {
   if (socket) return;
-  els.btnJoin.disabled = true;
+  setLobbyBusy(true);
   els.lobbyStatus.textContent = '서버에 접속하는 중...';
   socket = io();
 
   socket.on('connect', () => {
-    socket.emit('join', { name: els.nameInput.value });
+    socket.emit('join', { name: els.nameInput.value, roomId });
   });
   socket.on('connect_error', () => {
     els.lobbyStatus.textContent = '서버에 접속할 수 없습니다. 잠시 후 다시 시도해주세요.';
-    els.btnJoin.disabled = false;
+    socket = null;
+    setLobbyBusy(false);
+  });
+  socket.on('joinError', (data) => {
+    els.lobbyStatus.textContent = (data && data.reason === 'full')
+      ? '그 방은 방금 가득 찼습니다. 다른 방을 골라주세요.'
+      : '입장에 실패했습니다. 다시 시도해주세요.';
+    socket.close();
+    socket = null;
+    setLobbyBusy(false);
+    fetchRooms();
   });
   socket.on('joined', (data) => {
     myId = data.id;
     levelStart = data.levelStart;
     els.lobby.classList.add('hidden');
     els.world.classList.remove('hidden');
+    clearInterval(roomPollTimer);
   });
   socket.on('roster', renderRoster);
   socket.on('state', onState);
