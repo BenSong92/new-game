@@ -150,9 +150,12 @@ const _hazardRel = new CANNON.Vec3();
 // 포지션 직접 조작이라 다음 틱 입력 기반 velocity 덮어쓰기에 영향받지 않는다).
 // MAX_SPEED(15)보다 확실히 빠르게 잡아야, 플레이어가 계속 그 방향으로 입력을 넣고 있어도
 // 순간력으로 밀려나는 게 보장된다(안 그러면 입력 이동과 서로 비겨서 그 자리에 붙어있는 것처럼 보임).
-const HAZARD_DRAG_MS = 450, HAZARD_DRAG_SPEED = 22; // 장애물: 짧고 강하게 튕겨나감
-const VILLAIN_DRAG_MS = 500, VILLAIN_DRAG_SPEED = 22; // 일반 빌런(넓은 길 없는 구간): 짧고 강하게
-const VILLAIN_WIDE_DRAG_MS = 2000, VILLAIN_WIDE_DRAG_SPEED = 7; // 유혹 빌런: 2초간 넓은 길 쪽으로 붙잡혀 끌려감(천천히, 저항할 여지를 준다)
+// 조작감 기준은 폴 가이즈(미끄럽고 통제 못 하는 시간이 긴 편)가 아니라 겟앰프드에 가깝게
+// — 맞으면 짧고 굵게 확 튕겨나가고, 그 다음엔 곧바로 다시 완전히 조작 가능해야 한다. durationMs를
+// 길게 잡느니 speed를 세게 잡아 "순간적으로 세게, 오래 끌지 않는" 쪽으로 튜닝했다.
+const HAZARD_DRAG_MS = 180, HAZARD_DRAG_SPEED = 32; // 장애물: 아주 짧고 굵게 튕겨나감
+const VILLAIN_DRAG_MS = 180, VILLAIN_DRAG_SPEED = 32; // 일반 빌런(넓은 길 없는 구간): 아주 짧고 굵게
+const VILLAIN_WIDE_DRAG_MS = 900, VILLAIN_WIDE_DRAG_SPEED = 16; // 유혹 빌런: 짧게 붙잡혀 넓은 길 쪽으로 확 끌려감
 
 // box(회전/진자 장대)는 회전을 고려해 로컬 좌표계로 변환한 뒤 가장 가까운 점을 구하고,
 // sphere(롤러 등)는 단순 중심간 거리로 판정한다.
@@ -514,7 +517,7 @@ class Room {
           p.body.velocity.x = nx * HAZARD_KNOCK_H;
           p.body.velocity.z = nz * HAZARD_KNOCK_H;
           p.body.velocity.y = HAZARD_KNOCK_V;
-          p.invulnerableUntil = now + HAZARD_DRAG_MS + 250;
+          p.invulnerableUntil = now + HAZARD_DRAG_MS + 120;
           break;
         }
       }
@@ -658,7 +661,7 @@ class Room {
             p.dragDz = VILLAIN_WIDE_DRAG_SPEED;
             p.body.velocity.y = v.knockV;
             p.socket.emit('toast', { text: `${v.name}에게 붙잡혀 넓은 길 쪽으로 끌려갑니다!` });
-            p.invulnerableUntil = now + VILLAIN_WIDE_DRAG_MS + 300;
+            p.invulnerableUntil = now + VILLAIN_WIDE_DRAG_MS + 150;
           } else {
             p.dragUntil = now + VILLAIN_DRAG_MS;
             p.dragDx = nx * VILLAIN_DRAG_SPEED;
@@ -667,7 +670,7 @@ class Room {
             p.body.velocity.z = nz * v.knockH;
             p.body.velocity.y = v.knockV;
             p.socket.emit('toast', { text: `${v.name}에게 당했습니다!` });
-            p.invulnerableUntil = now + 1500;
+            p.invulnerableUntil = now + VILLAIN_DRAG_MS + 220;
           }
           break;
         }
