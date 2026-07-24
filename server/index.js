@@ -144,6 +144,16 @@ const HAZARD_KNOCK_H = 12, HAZARD_KNOCK_V = 6; // 빌런보다는 약하게 — 
 const _hazardQ = new CANNON.Quaternion();
 const _hazardRel = new CANNON.Vec3();
 
+// 한 틱짜리 위치 보정(overlap+0.3)만으로는 빠르게 이동 중일 땐 체감이 거의 안 된다(다음 틱에
+// 다시 같은 방향으로 걸어 들어가면 경계에 붙어있는 것처럼만 보임) — 그래서 맞은 뒤 일정
+// 시간 동안 매 틱 지속적으로 밀려나는 "드래그" 상태를 추가로 준다(잡기-끌기와 같은 방식,
+// 포지션 직접 조작이라 다음 틱 입력 기반 velocity 덮어쓰기에 영향받지 않는다).
+// MAX_SPEED(15)보다 확실히 빠르게 잡아야, 플레이어가 계속 그 방향으로 입력을 넣고 있어도
+// 순간력으로 밀려나는 게 보장된다(안 그러면 입력 이동과 서로 비겨서 그 자리에 붙어있는 것처럼 보임).
+const HAZARD_DRAG_MS = 450, HAZARD_DRAG_SPEED = 22; // 장애물: 짧고 강하게 튕겨나감
+const VILLAIN_DRAG_MS = 500, VILLAIN_DRAG_SPEED = 22; // 일반 빌런(넓은 길 없는 구간): 짧고 강하게
+const VILLAIN_WIDE_DRAG_MS = 2000, VILLAIN_WIDE_DRAG_SPEED = 7; // 유혹 빌런: 2초간 넓은 길 쪽으로 붙잡혀 끌려감(천천히, 저항할 여지를 준다)
+
 // box(회전/진자 장대)는 회전을 고려해 로컬 좌표계로 변환한 뒤 가장 가까운 점을 구하고,
 // sphere(롤러 등)는 단순 중심간 거리로 판정한다.
 function hazardHitDistSq(piece, pos, angle, playerPos) {
@@ -306,6 +316,8 @@ class Room {
       // ---- 밀치기/잡기 ----
       grabbing: null,   // 내가 붙잡고 있는 상대 id
       grabbedBy: null,  // 나를 붙잡고 있는 상대 id
+      // ---- 장애물/빌런에 맞아 밀려나는 중(포지션 기반 지속 이동, 한 틱 보정만으론 체감이 안 돼서 도입) ----
+      dragUntil: 0, dragDx: 0, dragDz: 0,
     };
     this.players.set(socket.id, player);
     return player;
@@ -440,6 +452,18 @@ class Room {
     });
   }
 
+  // ---------- 장애물/빌런에 맞아 밀려나는 중인 플레이어를 매 틱 계속 밀어준다 ----------
+  // (밀치기/잡기-끌기와 동일하게 position을 직접 조작 — velocity는 다음 틱 입력 이동으로
+  // 곧바로 덮어써지므로 지속 효과를 내려면 반드시 position이어야 한다.)
+  updateKnockbackDrags(simDt, now) {
+    this.players.forEach((p) => {
+      if (p.dragUntil > now) {
+        p.body.position.x += p.dragDx * simDt;
+        p.body.position.z += p.dragDz * simDt;
+      }
+    });
+  }
+
   // ---------- 양심의 선택: 강제 안내 없이 놓인 쓰레기 — 잡기(grab) 버튼을 눌러야 주울 수 있다.
   // 주우면 몸에 붙어다니는 시각 효과 + 이동속도·점프력 소폭 상승(개당 +2%, 누적)을 준다.
   updateConscience(now) {
@@ -481,14 +505,16 @@ class Room {
         if (result.hit) {
           const d = Math.hypot(result.pushX, result.pushZ) || 1;
           const nx = result.pushX / d, nz = result.pushZ / d;
-          // 위치를 직접 밀어내야 실제로 떨어진다 — 속도만 주면 다음 틱의 입력 기반 이동이
-          // world.step() 전에 곧바로 덮어써서 무력화된다(밀치기/잡기-끌기와 동일한 이유).
+          // 한 틱짜리 위치 보정만으론 체감이 약해 곧바로 + 이후 HAZARD_DRAG_MS 동안 지속으로 밀어낸다.
           p.body.position.x += nx * (result.overlap + 0.3);
           p.body.position.z += nz * (result.overlap + 0.3);
+          p.dragUntil = now + HAZARD_DRAG_MS;
+          p.dragDx = nx * HAZARD_DRAG_SPEED;
+          p.dragDz = nz * HAZARD_DRAG_SPEED;
           p.body.velocity.x = nx * HAZARD_KNOCK_H;
           p.body.velocity.z = nz * HAZARD_KNOCK_H;
           p.body.velocity.y = HAZARD_KNOCK_V;
-          p.invulnerableUntil = now + 700;
+          p.invulnerableUntil = now + HAZARD_DRAG_MS + 250;
           break;
         }
       }
@@ -621,21 +647,28 @@ class Room {
           const overlap = hitR - d;
           // 밀치기/잡기-끌기와 같은 이유로 위치를 직접 밀어내야 실제로 떨어져 나간다 —
           // 속도만 주면 다음 틱 입력 이동이 world.step() 전에 곧바로 덮어써서 무력화된다.
+          // 한 틱 보정은 순간 체감이 약하므로, 이후 일정 시간 동안 매 틱 계속 밀어내는
+          // dragUntil/dragDx/dragDz(updateKnockbackDrags)로 이어받는다.
           p.body.position.x += nx * (overlap + 0.3);
           p.body.position.z += nz * (overlap + 0.3);
           if (v.pullToWide) {
             const dSign = dx === 0 ? 1 : Math.sign(dx);
-            p.body.velocity.x = dSign * v.knockH * 0.35;
-            p.body.velocity.z = v.knockH;
+            p.dragUntil = now + VILLAIN_WIDE_DRAG_MS;
+            p.dragDx = dSign * VILLAIN_WIDE_DRAG_SPEED * 0.35;
+            p.dragDz = VILLAIN_WIDE_DRAG_SPEED;
             p.body.velocity.y = v.knockV;
-            p.socket.emit('toast', { text: `${v.name}에게 붙잡혀 넓은 길 쪽으로 떠밀렸습니다!` });
+            p.socket.emit('toast', { text: `${v.name}에게 붙잡혀 넓은 길 쪽으로 끌려갑니다!` });
+            p.invulnerableUntil = now + VILLAIN_WIDE_DRAG_MS + 300;
           } else {
+            p.dragUntil = now + VILLAIN_DRAG_MS;
+            p.dragDx = nx * VILLAIN_DRAG_SPEED;
+            p.dragDz = nz * VILLAIN_DRAG_SPEED;
             p.body.velocity.x = nx * v.knockH;
             p.body.velocity.z = nz * v.knockH;
             p.body.velocity.y = v.knockV;
             p.socket.emit('toast', { text: `${v.name}에게 당했습니다!` });
+            p.invulnerableUntil = now + 1500;
           }
-          p.invulnerableUntil = now + 1500;
           break;
         }
       }
@@ -729,6 +762,7 @@ class Room {
     });
 
     this.world.step(DT, timeSinceLastCalled, 5);
+    this.updateKnockbackDrags(simDt, now);
     this.updatePlayerPush();
     this.updateGrabs();
     this.updateVillains(simDt, now);
