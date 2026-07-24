@@ -146,6 +146,23 @@ function makeKinematicBody(world, piece) {
 // 순수 거리 계산으로 직접 충돌을 처리하는 "위험물" 종류 (bar: 회전/진자 장대, sphere: 롤러·궤도 장애물).
 // 바디가 없는 순수 데이터라 방마다 다시 만들 필요 없이 전부 공유한다.
 const hazardKinematics = LEVEL.kinematics.filter((p) => p.type === 'bar' || p.type === 'sphere');
+
+// 밟으면 무너지는 발판(crumble): kinematicTransform은 순수 시간 함수라 "플레이어가 밟았는지"를
+// 표현할 수 없다 — villain/fork처럼 방마다 상태를 서버가 직접 추적한다(Room.crumbleStates).
+// 밟은 순간부터 warnMs 동안 깜빡이며 그대로 서 있을 수 있고, 그 뒤 사라져서 respawnMs 동안
+// 통과 불가 상태였다가 다시 멀쩡하게 리셋된다(한 번 무너뜨렸다고 영원히 막히면 다른
+// 플레이어나 재도전이 불가능해지므로 반드시 되살아나야 한다).
+const crumblePieceIndices = LEVEL.kinematics
+  .map((p, i) => (p.motion && p.motion.type === 'crumble' ? i : -1))
+  .filter((i) => i >= 0);
+function isStandingOnCrumble(piece, playerPos) {
+  const hx = piece.size.x / 2, hz = piece.size.z / 2;
+  if (Math.abs(playerPos.x - piece.pos.x) > hx * 0.92) return false;
+  if (Math.abs(playerPos.z - piece.pos.z) > hz * 0.92) return false;
+  const topY = piece.pos.y + piece.size.y / 2;
+  const feetY = playerPos.y - PLAYER_RADIUS;
+  return feetY >= topY - 0.4 && feetY <= topY + 0.5;
+}
 const HAZARD_KNOCK_H = 12, HAZARD_KNOCK_V = 6; // 빌런보다는 약하게 — 성난 몬스터가 아니라 환경 장애물이므로
 const _hazardQ = new CANNON.Quaternion();
 const _hazardRel = new CANNON.Vec3();
@@ -248,6 +265,7 @@ class Room {
     // (예전엔 piece.body에 직접 붙였는데, 방이 여러 개면 서로 덮어써서 안 된다.)
     this.staticBodies = LEVEL.statics.map((p) => makeStaticBody(this.world, p));
     this.kinematicBodies = LEVEL.kinematics.map((p) => makeKinematicBody(this.world, p));
+    this.crumbleStates = new Map(crumblePieceIndices.map((i) => [i, { triggeredAt: null }]));
 
     this.villainStates = LEVEL.villains.map((v) => ({
       ...v,
@@ -456,6 +474,30 @@ class Room {
         p.body.velocity.y = HILL_GATE_KNOCK_V;
         p.hillGateBounceUntil = now + HILL_GATE_COOLDOWN_MS;
         p.socket.emit('toast', { text: '짐이 아직 남아 있습니다 — 고난의 계단으로 돌아가야 합니다.' });
+      }
+    });
+  }
+
+  // ---------- 밟으면 무너지는 발판: 밟은 순간 기록해두고 warnMs 동안 깜빡이며 버티다가
+  // 사라진 뒤 respawnMs가 지나면 다시 멀쩡해진다(world.step 전에 호출 — 이번 틱 충돌 판정에
+  // 바로 반영되어야 하므로 hazard/villain 드래그와 달리 스텝 전에 처리한다). ----------
+  updateCrumblePlatforms(now) {
+    crumblePieceIndices.forEach((i) => {
+      const piece = LEVEL.kinematics[i];
+      const cs = this.crumbleStates.get(i);
+      const body = this.kinematicBodies[i];
+      if (cs.triggeredAt && now - cs.triggeredAt >= piece.motion.warnMs + piece.motion.respawnMs) {
+        cs.triggeredAt = null; // 다 지나면 리셋 — 다시 밟을 수 있는 상태로
+      }
+      const solid = !cs.triggeredAt || now - cs.triggeredAt < piece.motion.warnMs;
+      if (body) {
+        if (solid) body.position.set(piece.pos.x, piece.pos.y, piece.pos.z);
+        else body.position.set(piece.pos.x, piece.pos.y - 60, piece.pos.z);
+      }
+      if (!cs.triggeredAt) {
+        this.players.forEach((p) => {
+          if (isStandingOnCrumble(piece, p.body.position)) cs.triggeredAt = now;
+        });
       }
     });
   }
@@ -721,12 +763,13 @@ class Room {
     this.lastTickTime = now;
 
     this.kinematicBodies.forEach((body, i) => {
-      if (!body) return;
+      if (!body || this.crumbleStates.has(i)) return; // crumble 발판은 아래 updateCrumblePlatforms가 따로 위치를 관리한다
       const piece = LEVEL.kinematics[i];
       const { pos, angle } = LEVEL.kinematicTransform(piece, t);
       body.position.set(pos.x, pos.y, pos.z);
       body.quaternion.setFromEuler(angle.x, angle.y, angle.z);
     });
+    this.updateCrumblePlatforms(now);
 
     const simDt = Math.min(timeSinceLastCalled, DT * 5); // cannon의 maxSubSteps(5)와 동일하게 캡핑
 
@@ -863,6 +906,15 @@ class Room {
         },
       })),
       villains: this.villainStates.map((v) => ({ id: v.id, pos: v.pos })),
+      crumbles: crumblePieceIndices.map((i) => {
+        const piece = LEVEL.kinematics[i];
+        const cs = this.crumbleStates.get(i);
+        if (!cs.triggeredAt) return { i, visible: true, warn: false };
+        const elapsed = now - cs.triggeredAt;
+        const warn = elapsed < piece.motion.warnMs;
+        const visible = warn || elapsed >= piece.motion.warnMs + piece.motion.respawnMs;
+        return { i, visible, warn };
+      }),
     });
   }
 

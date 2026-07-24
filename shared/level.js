@@ -208,7 +208,10 @@
   // =================================================================
   // ZONE B — 밀린 과제의 늪 (Swamp of Overdue Homework)
   // 가지런한 지그재그 다리가 아니라, 아무렇게나 흩어진 채 조금씩 다른 높이로 쌓인 책더미를
-  // 건너간다 — 뒤로 갈수록 더미가 좁아지고 더 빨리/크게 흔들린다.
+  // 건너간다 — 뒤로 갈수록 더미가 좁아지고 더 빨리/크게 흔들린다. 밀린 일들이 다양한 방식으로
+  // 발밑을 흔든다는 컨셉으로 구간마다 다른 성격의 흔들림을 준다: 도입부는 위아래로만 흔들리고,
+  // 중반은 옆으로도 밀려나고, 그 다음은 예고 거의 없이 갑자기 사라지고, 막판(도착 직전)은
+  // 밟는 순간 무너지기 시작해 깜빡이다 사라진다(무너진 뒤 다시 나타나므로 영구히 막히진 않음).
   // =================================================================
   addStatic('plane_hazard', { x: edge + 75, y: y - 7, z: 0 }, { x: 165, y: 1, z: 30 }, '#4a3d2a');
   const stoneW0 = 5, stoneWMin = 4.3;
@@ -231,9 +234,21 @@
     const stackY = swampBaseY + bookYOff[i];
     const amp = 0.25 + ease * 0.35;
     const speed = 1.0 + ease * 0.7;
-    addKinematic('box', { x, y: stackY, z }, { x: w, y: 1, z: w }, bookColors[i % bookColors.length], {
-      type: 'bob', amplitude: amp, speed, phase: i * 0.8, axis: 'y',
-    });
+    let motion;
+    if (i < 4) {
+      // 도입부: 원래대로 위아래로만 흔들림
+      motion = { type: 'bob', amplitude: amp, speed, phase: i * 0.8, axis: 'y' };
+    } else if (i < 7) {
+      // 옆으로도 밀려나는 책더미 — 발 디딜 때 좌우(z) 위치가 계속 바뀐다
+      motion = { type: 'slide', axis: 'z', amplitude: 1.5 + ease * 0.7, speed: 0.8 + ease * 0.4, phase: i * 0.9 };
+    } else if (i < 10) {
+      // 거의 예고 없이 갑자기 사라지는 책더미(경고 시간이 짧다) — 그래도 대부분 시간은 밟을 수 있게
+      motion = { type: 'blink', period: 3.4 - ease * 0.3, onDuration: 2.1, warnDuration: 0.25, phase: i * 0.7 };
+    } else {
+      // 막판(도착 직전): 밟는 순간부터 무너지기 시작 — 0.5초 깜빡이다 사라지고, 3초 뒤 다시 멀쩡해짐
+      motion = { type: 'crumble', warnMs: 500, respawnMs: 3000 };
+    }
+    addKinematic('box', { x, y: stackY, z }, { x: w, y: 1, z: w }, bookColors[i % bookColors.length], motion);
     edge += w + gap;
   }
   edge += 2;

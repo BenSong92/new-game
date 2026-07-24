@@ -18,6 +18,7 @@ const touchMove = { active: false, ix: 0, iz: 0, pointerId: null };
 const entities = new Map(); // id -> { mesh, name, color, current:{x,y,z}, target:{x,y,z}, yaw }
 const kinematicMeshes = []; // parallel to LEVEL.kinematics
 const grabLines = new Map(); // "grabberId|targetId" -> THREE.Line (붙잡고 있는 동안만 존재)
+const crumbleState = new Map(); // kinematics 인덱스 -> { visible, warn } (서버가 밟힘 여부를 브로드캐스트)
 
 // 구역(체크포인트)마다 하늘/안개/조명을 다르게 해서 천로역정 각 단계의 분위기를 낸다.
 // 구역이 바뀔 때 색이 뚝 끊기지 않도록 loop()에서 매 프레임 targetTheme 쪽으로 서서히 보간한다.
@@ -415,7 +416,7 @@ function buildLevelMeshes() {
 
 function buildPieceMesh(piece) {
   const mat = new THREE.MeshLambertMaterial({ color: piece.color || '#8a7a63' });
-  if (piece.motion && piece.motion.type === 'blink') {
+  if (piece.motion && (piece.motion.type === 'blink' || piece.motion.type === 'crumble')) {
     mat.transparent = true; // 사라지기 직전 경고로 반투명하게 깜빡여야 하므로
   }
   if (piece.type === 'box' || piece.type === 'bar') {
@@ -688,6 +689,7 @@ function onState(data) {
   });
 
   (data.villains || []).forEach((v) => ensureVillainEntity(v));
+  (data.crumbles || []).forEach((c) => crumbleState.set(c.i, c));
   syncGrabLines(data.players);
   syncTrashAttachments(data.players);
 
@@ -827,8 +829,16 @@ function loop() {
 
     const t = (Date.now() + serverOffset - levelStart) / 1000;
     LEVEL.kinematics.forEach((piece, i) => {
-      const { pos, angle, warn } = LEVEL.kinematicTransform(piece, t);
       const mesh = kinematicMeshes[i];
+      if (piece.motion.type === 'crumble') {
+        // 밟았는지는 시간만의 함수로 표현할 수 없어(플레이어 행동에 반응) 서버가 보내주는
+        // crumbleState를 그대로 따른다 — 기본은 항상 멀쩡한 상태.
+        const cs = crumbleState.get(i) || { visible: true, warn: false };
+        mesh.position.set(piece.pos.x, cs.visible ? piece.pos.y : piece.pos.y - 60, piece.pos.z);
+        mesh.material.opacity = cs.warn ? (0.35 + 0.35 * Math.abs(Math.sin(t * 20))) : 1;
+        return;
+      }
+      const { pos, angle, warn } = LEVEL.kinematicTransform(piece, t);
       mesh.position.set(pos.x, pos.y, pos.z);
       mesh.rotation.set(angle.x, angle.y, angle.z);
       if (piece.motion.type === 'blink') {
