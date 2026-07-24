@@ -773,6 +773,16 @@ class Room {
 
     this.players.forEach((p) => {
       if (p.body.position.y < LEVEL.fallY) {
+        // 낙사 순간 남아있던 상태를 반드시 지워야 한다 — 안 그러면 리스폰된 새 위치에서
+        // 입력 없이도 그 상태가 계속 적용된다(장애물/빌런에 맞아 드래그 중이었다면 저 혼자
+        // 계속 밀려나고, 잡고/잡혀 있었다면 멀리 떨어진 상대 쪽으로 순간이동하듯 끌려간다).
+        p.dragUntil = 0;
+        this.releaseGrab(p);
+        if (p.grabbedBy) {
+          const grabber = this.players.get(p.grabbedBy);
+          if (grabber) grabber.grabbing = null;
+          p.grabbedBy = null;
+        }
         if (p.shield) {
           p.shield = false;
           p.body.position.y = LEVEL.fallY + 20;

@@ -398,11 +398,14 @@
   addKinematic('bar', { x: bridgeStart + 38, y: y + 1.7, z: 0 }, { x: 1, y: 1, z: 8 }, '#8c3b2e', {
     type: 'rotorY', speed: 1.35, phase: 2.4,
   });
-  addVillain('v-burnout', { x: bridgeStart + 44, y: y + 1.6, z: 0 }, {
+  platform(20, 4.2, '#232019');
+  // 번아웃은 회전 장대(rotorY) 바로 옆에 두지 않는다 — 장대에 맞아 생기는 무적 시간(약 1초) 동안
+  // 그대로 지나쳐버려 부딪혀도 아무 반응이 없는 것처럼 보이는 버그가 있었다(위 불안의 그림자
+  // 주석과 같은 이유: 두 위협을 겹쳐두면 안 된다). 장대가 없는 이 구간 한가운데로 옮긴다.
+  addVillain('v-burnout', { x: edge - 10, y: y + 1.6, z: 0 }, {
     name: '번아웃', chaseRadius: 24, patrolRadius: 6, speed: 10,
     hitRadius: 2.4, color: '#5a0a0a', scale: 1.9,
   });
-  platform(20, 4.2, '#232019');
   // 두 번째 "흔들리는 확신" — 밤이 깊어질수록 더 빨리 흔들린다.
   addKinematic('box', { x: edge + 4.5, y: y - 0.5, z: 0 }, { x: 8, y: 1, z: 4.2 }, '#5a2e2e', {
     type: 'blink', period: 2.6, onDuration: 1.5, warnDuration: 0.6, phase: 1.5,
