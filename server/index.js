@@ -48,6 +48,8 @@ const GRABBED_SPEED_MULT = 0.6; // 잡힌 쪽 이동속도 40% 감소
 const GRABBING_SPEED_MULT = 0.6; // 잡은 쪽도 상대를 끌고 있으니 동일하게 40% 감소
 const GRAB_JUMP_MULT = 0.6; // 잡기 중엔 점프력도 40% 감소(둘 다) — 붙잡은 채로는 힘이 덜 들어간다
 const GRAB_PULL_STRENGTH = 0.05; // 틱마다 남은 거리의 5%만큼만 끌려옴(폴가이즈처럼 부드럽게)
+// 양심의 선택(쓰레기)을 주울 때마다 이동속도/점프력에 곱해지는 보너스 — 개당 2%, 누적(합연산 아님, 곱연산)
+const CONSCIENCE_BONUS_PER_ITEM = 0.02;
 
 // ---------- 방(room) ----------
 // 부하 테스트 결과 한 방에 60Hz 틱이 안정적으로 유지되는 인원은 약 10~15명이었다.
@@ -148,8 +150,9 @@ function hazardHitDistSq(piece, pos, angle, playerPos) {
   if (piece.type === 'sphere') {
     const dx = playerPos.x - pos.x, dy = playerPos.y - pos.y, dz = playerPos.z - pos.z;
     const r = piece.size.r + PLAYER_RADIUS;
-    const distSq = dx * dx + dy * dy + dz * dz;
-    return { hit: distSq < r * r, pushX: dx, pushZ: dz };
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist >= r) return { hit: false };
+    return { hit: true, pushX: dx, pushZ: dz, overlap: r - dist };
   }
   // bar: 회전된 박스 — 플레이어 위치를 박스의 로컬 좌표계로 변환
   _hazardQ.setFromEuler(angle.x, angle.y, angle.z);
@@ -164,7 +167,35 @@ function hazardHitDistSq(piece, pos, angle, playerPos) {
   if (distSq >= PLAYER_RADIUS * PLAYER_RADIUS) return { hit: false };
   // 가장 가까운 점을 다시 월드 좌표로 돌려서 미는 방향을 구한다
   const closestWorld = _hazardQ.vmult(new CANNON.Vec3(cx, cy, cz));
-  return { hit: true, pushX: playerPos.x - (pos.x + closestWorld.x), pushZ: playerPos.z - (pos.z + closestWorld.z) };
+  return {
+    hit: true,
+    pushX: playerPos.x - (pos.x + closestWorld.x),
+    pushZ: playerPos.z - (pos.z + closestWorld.z),
+    overlap: PLAYER_RADIUS - Math.sqrt(distSq),
+  };
+}
+
+// 장애물 위에 올라서 있는지 판정 (발판처럼 밟고 설 수 있게). 위로 솟구치는 중(점프 이륙 직후
+// 등)엔 판정하지 않아 아래에서 위로 뚫고 지나갈 수 있게 한다. 판정되면 밀쳐내기보다 우선한다.
+function hazardStandTopY(piece, pos, angle, playerPos, velY) {
+  if (velY > 3) return null;
+  if (piece.type === 'sphere') {
+    const dx = playerPos.x - pos.x, dz = playerPos.z - pos.z;
+    if (Math.hypot(dx, dz) > piece.size.r * 0.92) return null;
+    const topY = pos.y + piece.size.r;
+    const feetY = playerPos.y - PLAYER_RADIUS;
+    if (feetY < topY - 0.4 || feetY > topY + 0.65) return null;
+    return topY;
+  }
+  _hazardQ.setFromEuler(angle.x, angle.y, angle.z);
+  _hazardRel.set(playerPos.x - pos.x, playerPos.y - pos.y, playerPos.z - pos.z);
+  const local = _hazardQ.inverse().vmult(_hazardRel);
+  const hx = piece.size.x / 2, hy = piece.size.y / 2, hz = piece.size.z / 2;
+  if (Math.abs(local.x) > hx * 0.92 || Math.abs(local.z) > hz * 0.92) return null;
+  const feetLocalY = local.y - PLAYER_RADIUS;
+  if (feetLocalY < hy - 0.4 || feetLocalY > hy + 0.65) return null;
+  const topWorld = _hazardQ.vmult(new CANNON.Vec3(local.x, hy, local.z));
+  return pos.y + topWorld.y;
 }
 
 // ---------- checkpoint / npc lookup (읽기 전용 참조 데이터라 방마다 다시 만들 필요 없음) ----------
@@ -409,9 +440,11 @@ class Room {
     });
   }
 
-  // ---------- 양심의 선택: 안내 없이 놓인 아이템, 조용히 기록만 (강제 회수 없음) ----------
+  // ---------- 양심의 선택: 강제 안내 없이 놓인 쓰레기 — 잡기(grab) 버튼을 눌러야 주울 수 있다.
+  // 주우면 몸에 붙어다니는 시각 효과 + 이동속도·점프력 소폭 상승(개당 +2%, 누적)을 준다.
   updateConscience(now) {
     this.players.forEach((p) => {
+      if (!p.input.grab) return;
       for (const item of LEVEL.conscienceItems) {
         if (p.conscienceCollected.has(item.id)) continue;
         const dx = p.body.position.x - item.pos.x;
@@ -419,7 +452,7 @@ class Room {
         const dz = p.body.position.z - item.pos.z;
         if (dx * dx + dy * dy + dz * dz < item.radius * item.radius) {
           p.conscienceCollected.add(item.id);
-          p.socket.emit('toast', { text: '무언가를 정리했습니다.' });
+          p.socket.emit('toast', { text: '쓰레기를 주웠습니다. (이동속도·점프력 소폭 상승)' });
         }
       }
     });
@@ -427,14 +460,33 @@ class Room {
 
   updateHazards(t, now) {
     this.players.forEach((p) => {
-      if (now < p.invulnerableUntil) return;
+      // 먼저 위에 올라서 있는지부터 본다 — 서 있으면 옆에서 미는 판정은 건너뛴다.
+      let standing = false;
+      for (const piece of hazardKinematics) {
+        const { pos, angle } = LEVEL.kinematicTransform(piece, t);
+        const topY = hazardStandTopY(piece, pos, angle, p.body.position, p.body.velocity.y);
+        if (topY !== null) {
+          p.body.position.y = topY + PLAYER_RADIUS;
+          if (p.body.velocity.y < 0) p.body.velocity.y = 0;
+          p.lastGroundedAt = now;
+          p.jumpCut = false;
+          standing = true;
+          break;
+        }
+      }
+      if (standing || now < p.invulnerableUntil) return;
       for (const piece of hazardKinematics) {
         const { pos, angle } = LEVEL.kinematicTransform(piece, t);
         const result = hazardHitDistSq(piece, pos, angle, p.body.position);
         if (result.hit) {
           const d = Math.hypot(result.pushX, result.pushZ) || 1;
-          p.body.velocity.x = (result.pushX / d) * HAZARD_KNOCK_H;
-          p.body.velocity.z = (result.pushZ / d) * HAZARD_KNOCK_H;
+          const nx = result.pushX / d, nz = result.pushZ / d;
+          // 위치를 직접 밀어내야 실제로 떨어진다 — 속도만 주면 다음 틱의 입력 기반 이동이
+          // world.step() 전에 곧바로 덮어써서 무력화된다(밀치기/잡기-끌기와 동일한 이유).
+          p.body.position.x += nx * (result.overlap + 0.3);
+          p.body.position.z += nz * (result.overlap + 0.3);
+          p.body.velocity.x = nx * HAZARD_KNOCK_H;
+          p.body.velocity.z = nz * HAZARD_KNOCK_H;
           p.body.velocity.y = HAZARD_KNOCK_V;
           p.invulnerableUntil = now + 700;
           break;
@@ -564,6 +616,13 @@ class Room {
         const dz = p.body.position.z - v.pos.z;
         const hitR = v.hitRadius + PLAYER_RADIUS;
         if (dx * dx + dy * dy + dz * dz < hitR * hitR) {
+          const d = Math.hypot(dx, dz) || 1;
+          const nx = dx / d, nz = dz / d;
+          const overlap = hitR - d;
+          // 밀치기/잡기-끌기와 같은 이유로 위치를 직접 밀어내야 실제로 떨어져 나간다 —
+          // 속도만 주면 다음 틱 입력 이동이 world.step() 전에 곧바로 덮어써서 무력화된다.
+          p.body.position.x += nx * (overlap + 0.3);
+          p.body.position.z += nz * (overlap + 0.3);
           if (v.pullToWide) {
             const dSign = dx === 0 ? 1 : Math.sign(dx);
             p.body.velocity.x = dSign * v.knockH * 0.35;
@@ -571,9 +630,8 @@ class Room {
             p.body.velocity.y = v.knockV;
             p.socket.emit('toast', { text: `${v.name}에게 붙잡혀 넓은 길 쪽으로 떠밀렸습니다!` });
           } else {
-            const d = Math.hypot(dx, dz) || 1;
-            p.body.velocity.x = (dx / d) * v.knockH;
-            p.body.velocity.z = (dz / d) * v.knockH;
+            p.body.velocity.x = nx * v.knockH;
+            p.body.velocity.z = nz * v.knockH;
             p.body.velocity.y = v.knockV;
             p.socket.emit('toast', { text: `${v.name}에게 당했습니다!` });
           }
@@ -640,7 +698,8 @@ class Room {
 
       const burdenMult = 1 - p.burden * 0.035;
       const grabMult = (p.grabbedBy ? GRABBED_SPEED_MULT : 1) * (p.grabbing ? GRABBING_SPEED_MULT : 1);
-      const speedMult = (now < p.buffSpeedUntil ? p.buffSpeedMult : 1) * burdenMult * grabMult;
+      const conscienceMult = 1 + p.conscienceCollected.size * CONSCIENCE_BONUS_PER_ITEM;
+      const speedMult = (now < p.buffSpeedUntil ? p.buffSpeedMult : 1) * burdenMult * grabMult * conscienceMult;
       p.body.velocity.x = p.input.x * MAX_SPEED * speedMult;
       p.body.velocity.z = p.input.z * MAX_SPEED * speedMult;
 
@@ -650,7 +709,7 @@ class Room {
 
       if (withinCoyote && jumpRequested && !p.jumpFiredThisContact && cooldownOk) {
         const grabJumpMult = (p.grabbedBy ? GRAB_JUMP_MULT : 1) * (p.grabbing ? GRAB_JUMP_MULT : 1);
-        const jumpMult = (now < p.buffJumpUntil ? p.buffJumpMult : 1) * burdenMult * grabJumpMult;
+        const jumpMult = (now < p.buffJumpUntil ? p.buffJumpMult : 1) * burdenMult * grabJumpMult * conscienceMult;
         p.body.velocity.y = JUMP_SPEED * jumpMult;
         p.jumpFiredThisContact = true;
         p.lastJumpFiredAt = now;

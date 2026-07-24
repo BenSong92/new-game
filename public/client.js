@@ -602,6 +602,36 @@ function ensureEntity(p) {
   return e;
 }
 
+// ---------- 양심의 선택(쓰레기): 주운 만큼 캐릭터 등에 실제로 매달려 붙어있는 것처럼 표시 ----------
+const trashAttachGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.32, 8);
+const trashAttachMat = new THREE.MeshLambertMaterial({ color: '#c0392b' });
+
+function syncTrashAttachments(players) {
+  players.forEach((p) => {
+    const e = entities.get(p.id);
+    if (!e) return;
+    if (!e.trashGroup) {
+      e.trashGroup = new THREE.Group();
+      e.trashGroup.position.set(0, 2.0, -0.55); // 등 쪽에 짊어진 것처럼
+      e.mesh.add(e.trashGroup);
+      e.trashCount = 0;
+    }
+    const count = p.conscienceCount || 0;
+    if (count === e.trashCount) return;
+    while (e.trashGroup.children.length < count) {
+      const i = e.trashGroup.children.length;
+      const can = new THREE.Mesh(trashAttachGeo, trashAttachMat);
+      can.rotation.set(Math.PI / 2 + (i % 3) * 0.35, i * 0.8, 0.25);
+      can.position.set(((i % 3) - 1) * 0.26, Math.floor(i / 3) * 0.28, 0);
+      e.trashGroup.add(can);
+    }
+    while (e.trashGroup.children.length > count) {
+      e.trashGroup.remove(e.trashGroup.children[e.trashGroup.children.length - 1]);
+    }
+    e.trashCount = count;
+  });
+}
+
 // ---------- 잡기: 붙잡고 있는 동안 두 사람 사이에 줄을 그려준다 ----------
 function syncGrabLines(players) {
   const activeKeys = new Set();
@@ -659,6 +689,7 @@ function onState(data) {
 
   (data.villains || []).forEach((v) => ensureVillainEntity(v));
   syncGrabLines(data.players);
+  syncTrashAttachments(data.players);
 
   const self = data.players.find((p) => p.id === myId);
   if (self) {
@@ -720,6 +751,9 @@ function updateBuffHud(self, players) {
   if (self.grabbedBy) {
     const grabber = players && players.find((p) => p.id === self.grabbedBy);
     chips.push(`⚠ ${grabber ? grabber.name : '누군가'}에게 붙잡힘`);
+  }
+  if (self.conscienceCount > 0) {
+    chips.push(`🗑 쓰레기 ${self.conscienceCount}개 (이동속도·점프력 +${self.conscienceCount * 2}%)`);
   }
   els.buffStatus.innerHTML = chips.map((c) => `<span class="buff-chip">${escapeHtml(c)}</span>`).join('');
 }
