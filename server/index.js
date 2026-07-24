@@ -148,14 +148,13 @@ const _hazardRel = new CANNON.Vec3();
 // 다시 같은 방향으로 걸어 들어가면 경계에 붙어있는 것처럼만 보임) — 그래서 맞은 뒤 일정
 // 시간 동안 매 틱 지속적으로 밀려나는 "드래그" 상태를 추가로 준다(잡기-끌기와 같은 방식,
 // 포지션 직접 조작이라 다음 틱 입력 기반 velocity 덮어쓰기에 영향받지 않는다).
-// MAX_SPEED(15)보다 확실히 빠르게 잡아야, 플레이어가 계속 그 방향으로 입력을 넣고 있어도
-// 순간력으로 밀려나는 게 보장된다(안 그러면 입력 이동과 서로 비겨서 그 자리에 붙어있는 것처럼 보임).
-// 조작감 기준은 폴 가이즈(미끄럽고 통제 못 하는 시간이 긴 편)가 아니라 겟앰프드에 가깝게
-// — 맞으면 짧고 굵게 확 튕겨나가고, 그 다음엔 곧바로 다시 완전히 조작 가능해야 한다. durationMs를
-// 길게 잡느니 speed를 세게 잡아 "순간적으로 세게, 오래 끌지 않는" 쪽으로 튜닝했다.
-const HAZARD_DRAG_MS = 180, HAZARD_DRAG_SPEED = 32; // 장애물: 아주 짧고 굵게 튕겨나감
-const VILLAIN_DRAG_MS = 180, VILLAIN_DRAG_SPEED = 32; // 일반 빌런(넓은 길 없는 구간): 아주 짧고 굵게
-const VILLAIN_WIDE_DRAG_MS = 900, VILLAIN_WIDE_DRAG_SPEED = 16; // 유혹 빌런: 짧게 붙잡혀 넓은 길 쪽으로 확 끌려감
+// 처음엔 등속(일정 속도로 딱 시작해서 딱 끝남)으로 만들었더니 시작/끝이 뚝뚝 끊기는 느낌이라는
+// 피드백을 받았다 — sin(진행률*π) 커브로 감싸서 0에서 부드럽게 가속했다가 다시 0으로 부드럽게
+// 감속하며 끝나도록(부드럽게 스윙하듯) 바꿨다. 총 이동거리(적분값)를 비슷하게 유지하려고
+// 최고 속도(peakSpeed)를 등속 대비 좀 더 높게, 지속시간(Ms)은 좀 더 길게 잡았다.
+const HAZARD_DRAG_MS = 400, HAZARD_DRAG_SPEED = 30; // 장애물: 부드럽게 스윙하듯 튕겨나감
+const VILLAIN_DRAG_MS = 400, VILLAIN_DRAG_SPEED = 30; // 일반 빌런(넓은 길 없는 구간)
+const VILLAIN_WIDE_DRAG_MS = 1200, VILLAIN_WIDE_DRAG_SPEED = 19; // 유혹 빌런: 붙잡혀 넓은 길 쪽으로 서서히 끌려감
 
 // box(회전/진자 장대)는 회전을 고려해 로컬 좌표계로 변환한 뒤 가장 가까운 점을 구하고,
 // sphere(롤러 등)는 단순 중심간 거리로 판정한다.
@@ -319,8 +318,8 @@ class Room {
       // ---- 밀치기/잡기 ----
       grabbing: null,   // 내가 붙잡고 있는 상대 id
       grabbedBy: null,  // 나를 붙잡고 있는 상대 id
-      // ---- 장애물/빌런에 맞아 밀려나는 중(포지션 기반 지속 이동, 한 틱 보정만으론 체감이 안 돼서 도입) ----
-      dragUntil: 0, dragDx: 0, dragDz: 0,
+      // ---- 장애물/빌런에 맞아 밀려나는 중(포지션 기반 지속 이동, sin 커브로 부드럽게 스윙) ----
+      dragUntil: 0, dragStartAt: 0, dragDurationMs: 0, dragPeakX: 0, dragPeakZ: 0,
     };
     this.players.set(socket.id, player);
     return player;
@@ -458,11 +457,15 @@ class Room {
   // ---------- 장애물/빌런에 맞아 밀려나는 중인 플레이어를 매 틱 계속 밀어준다 ----------
   // (밀치기/잡기-끌기와 동일하게 position을 직접 조작 — velocity는 다음 틱 입력 이동으로
   // 곧바로 덮어써지므로 지속 효과를 내려면 반드시 position이어야 한다.)
+  // sin(진행률*π) 커브로 감싸 0->최고속도->0으로 부드럽게 스윙하듯 밀어낸다(등속으로 딱
+  // 시작해서 딱 끊기던 것보다 훨씬 부드럽게 느껴진다).
   updateKnockbackDrags(simDt, now) {
     this.players.forEach((p) => {
       if (p.dragUntil > now) {
-        p.body.position.x += p.dragDx * simDt;
-        p.body.position.z += p.dragDz * simDt;
+        const progress = Math.min(1, Math.max(0, (now - p.dragStartAt) / p.dragDurationMs));
+        const ease = Math.sin(progress * Math.PI);
+        p.body.position.x += p.dragPeakX * ease * simDt;
+        p.body.position.z += p.dragPeakZ * ease * simDt;
       }
     });
   }
@@ -512,8 +515,10 @@ class Room {
           p.body.position.x += nx * (result.overlap + 0.3);
           p.body.position.z += nz * (result.overlap + 0.3);
           p.dragUntil = now + HAZARD_DRAG_MS;
-          p.dragDx = nx * HAZARD_DRAG_SPEED;
-          p.dragDz = nz * HAZARD_DRAG_SPEED;
+          p.dragStartAt = now;
+          p.dragDurationMs = HAZARD_DRAG_MS;
+          p.dragPeakX = nx * HAZARD_DRAG_SPEED;
+          p.dragPeakZ = nz * HAZARD_DRAG_SPEED;
           p.body.velocity.x = nx * HAZARD_KNOCK_H;
           p.body.velocity.z = nz * HAZARD_KNOCK_H;
           p.body.velocity.y = HAZARD_KNOCK_V;
@@ -650,22 +655,25 @@ class Room {
           const overlap = hitR - d;
           // 밀치기/잡기-끌기와 같은 이유로 위치를 직접 밀어내야 실제로 떨어져 나간다 —
           // 속도만 주면 다음 틱 입력 이동이 world.step() 전에 곧바로 덮어써서 무력화된다.
-          // 한 틱 보정은 순간 체감이 약하므로, 이후 일정 시간 동안 매 틱 계속 밀어내는
-          // dragUntil/dragDx/dragDz(updateKnockbackDrags)로 이어받는다.
+          // 한 틱 보정은 순간 체감이 약하므로, 이후 일정 시간 동안 sin 커브로 부드럽게 밀어내는
+          // dragUntil/dragPeakX/dragPeakZ(updateKnockbackDrags)로 이어받는다.
           p.body.position.x += nx * (overlap + 0.3);
           p.body.position.z += nz * (overlap + 0.3);
+          p.dragStartAt = now;
           if (v.pullToWide) {
             const dSign = dx === 0 ? 1 : Math.sign(dx);
             p.dragUntil = now + VILLAIN_WIDE_DRAG_MS;
-            p.dragDx = dSign * VILLAIN_WIDE_DRAG_SPEED * 0.35;
-            p.dragDz = VILLAIN_WIDE_DRAG_SPEED;
+            p.dragDurationMs = VILLAIN_WIDE_DRAG_MS;
+            p.dragPeakX = dSign * VILLAIN_WIDE_DRAG_SPEED * 0.35;
+            p.dragPeakZ = VILLAIN_WIDE_DRAG_SPEED;
             p.body.velocity.y = v.knockV;
             p.socket.emit('toast', { text: `${v.name}에게 붙잡혀 넓은 길 쪽으로 끌려갑니다!` });
             p.invulnerableUntil = now + VILLAIN_WIDE_DRAG_MS + 150;
           } else {
             p.dragUntil = now + VILLAIN_DRAG_MS;
-            p.dragDx = nx * VILLAIN_DRAG_SPEED;
-            p.dragDz = nz * VILLAIN_DRAG_SPEED;
+            p.dragDurationMs = VILLAIN_DRAG_MS;
+            p.dragPeakX = nx * VILLAIN_DRAG_SPEED;
+            p.dragPeakZ = nz * VILLAIN_DRAG_SPEED;
             p.body.velocity.x = nx * v.knockH;
             p.body.velocity.z = nz * v.knockH;
             p.body.velocity.y = v.knockV;
