@@ -44,9 +44,10 @@ const PLAYER_PUSH_KICK_MAX = 6;
 // 잡은 사람이 움직여도 상대가 안 따라오므로 반드시 필요하다. 버튼을 떼거나 너무 멀어지면 풀린다.
 const GRAB_RADIUS = 2.6;
 const GRAB_BREAK_DIST = 4.5;
-const GRABBED_SPEED_MULT = 0.35;
-const GRABBING_SPEED_MULT = 0.85;
-const GRAB_PULL_STRENGTH = 0.15; // 틱마다 남은 거리의 15%만큼 끌려옴
+const GRABBED_SPEED_MULT = 0.6; // 잡힌 쪽 이동속도 40% 감소
+const GRABBING_SPEED_MULT = 0.6; // 잡은 쪽도 상대를 끌고 있으니 동일하게 40% 감소
+const GRAB_JUMP_MULT = 0.6; // 잡기 중엔 점프력도 40% 감소(둘 다) — 붙잡은 채로는 힘이 덜 들어간다
+const GRAB_PULL_STRENGTH = 0.05; // 틱마다 남은 거리의 5%만큼만 끌려옴(폴가이즈처럼 부드럽게)
 
 // ---------- 방(room) ----------
 // 부하 테스트 결과 한 방에 60Hz 틱이 안정적으로 유지되는 인원은 약 10~15명이었다.
@@ -648,7 +649,8 @@ class Room {
       const cooldownOk = now - (p.lastJumpFiredAt || 0) >= MIN_JUMP_INTERVAL_MS;
 
       if (withinCoyote && jumpRequested && !p.jumpFiredThisContact && cooldownOk) {
-        const jumpMult = (now < p.buffJumpUntil ? p.buffJumpMult : 1) * burdenMult;
+        const grabJumpMult = (p.grabbedBy ? GRAB_JUMP_MULT : 1) * (p.grabbing ? GRAB_JUMP_MULT : 1);
+        const jumpMult = (now < p.buffJumpUntil ? p.buffJumpMult : 1) * burdenMult * grabJumpMult;
         p.body.velocity.y = JUMP_SPEED * jumpMult;
         p.jumpFiredThisContact = true;
         p.lastJumpFiredAt = now;
