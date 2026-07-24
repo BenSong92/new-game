@@ -166,16 +166,19 @@
     const wideEndPiece = platform(9, 6, '#e8d9b0', LANE_Z);
     let edgeWide = edge, yWide = y;
 
-    // 좁은 길: 알람시계 두 개를 지그재그로 피하고, 문지방을 올라 방을 나선다.
+    // 좁은 길: 알람시계 두 개를 지그재그로 밟고 건너는 구간 — "시간"을 테마로 삼아 두
+    // 알람시계가 4초 주기로 번갈아 사라졌다 나타난다(반씩 위상을 어긋나게 둬서 항상 최소
+    // 하나는 밟을 수 있는 상태 — 튜토리얼 구간이라 완전히 막히면 안 되므로 "적당히").
+    // 사라지기 0.7초 전엔 깜빡이는 경고(warn)를 보여준다.
     edge = forkStart; y = baseY;
     platform(4, 4, '#8a8478', -LANE_Z);
     edge += 4.3;
     addKinematic('box', { x: edge + 2, y, z: -LANE_Z + 1.4 }, { x: 4, y: 1, z: 4 }, '#c0392b', { // 알람시계 1
-      type: 'bob', amplitude: 0.3, speed: 1.3, phase: 0, axis: 'y',
+      type: 'blink', period: 4, onDuration: 2.6, warnDuration: 0.7, phase: 0,
     });
     edge += 4 + 4.3;
     addKinematic('box', { x: edge + 2, y, z: -LANE_Z - 1.4 }, { x: 4, y: 1, z: 4 }, '#c0392b', { // 알람시계 2
-      type: 'bob', amplitude: 0.35, speed: 1.6, phase: 1.2, axis: 'y',
+      type: 'blink', period: 4, onDuration: 2.6, warnDuration: 0.7, phase: 2,
     });
     edge += 4 + 4.3;
     platform(4, 4, '#8a8478', -LANE_Z); // 문지방 앞
