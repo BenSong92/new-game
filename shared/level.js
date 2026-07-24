@@ -242,8 +242,10 @@
       // 옆으로도 밀려나는 책더미 — 발 디딜 때 좌우(z) 위치가 계속 바뀐다
       motion = { type: 'slide', axis: 'z', amplitude: 1.5 + ease * 0.7, speed: 0.8 + ease * 0.4, phase: i * 0.9 };
     } else if (i < 10) {
-      // 거의 예고 없이 갑자기 사라지는 책더미(경고 시간이 짧다) — 그래도 대부분 시간은 밟을 수 있게
-      motion = { type: 'blink', period: 3.4 - ease * 0.3, onDuration: 2.1, warnDuration: 0.25, phase: i * 0.7 };
+      // 갑자기 사라지는 책더미 — 처음엔 경고 시간이 0.25초뿐이라 반응할 틈도 없이 사라져
+      // 못 건너간다는 피드백을 받았다. 실제로 밟을 수 있는 총 시간(onDuration=2.1초)은 그대로
+      // 두고, 사라지기 전 깜빡이는 경고만 1초로 늘려 반응할 시간을 넉넉히 준다.
+      motion = { type: 'blink', period: 3.4 - ease * 0.3, onDuration: 2.1, warnDuration: 1.0, phase: i * 0.7 };
     } else {
       // 막판(도착 직전): 밟는 순간부터 무너지기 시작 — 0.5초 깜빡이다 사라지고, 3초 뒤 다시 멀쩡해짐
       motion = { type: 'crumble', warnMs: 500, respawnMs: 3000 };
