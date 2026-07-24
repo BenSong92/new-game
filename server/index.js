@@ -177,7 +177,7 @@ const _hazardRel = new CANNON.Vec3();
 // 최고 속도(peakSpeed)를 등속 대비 좀 더 높게, 지속시간(Ms)은 좀 더 길게 잡았다.
 const HAZARD_DRAG_MS = 400, HAZARD_DRAG_SPEED = 30; // 장애물: 부드럽게 스윙하듯 튕겨나감
 const VILLAIN_DRAG_MS = 400, VILLAIN_DRAG_SPEED = 30; // 일반 빌런(넓은 길 없는 구간)
-const VILLAIN_WIDE_DRAG_MS = 1200, VILLAIN_WIDE_DRAG_SPEED = 19; // 유혹 빌런: 붙잡혀 넓은 길 쪽으로 서서히 끌려감
+const VILLAIN_WIDE_DRAG_MS = 1200, VILLAIN_WIDE_DRAG_SPEED = 14.25; // 유혹 빌런: 붙잡혀 넓은 길 쪽으로 서서히 끌려감 (기존 19에서 25% 감소)
 
 // box(회전/진자 장대)는 회전을 고려해 로컬 좌표계로 변환한 뒤 가장 가까운 점을 구하고,
 // sphere(롤러 등)는 단순 중심간 거리로 판정한다.
