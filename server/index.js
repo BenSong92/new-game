@@ -12,6 +12,12 @@ const PORT = process.env.PORT || 3000;
 const TICK_RATE = 60;
 const DT = 1 / TICK_RATE;
 const MAX_SPEED = 15;
+// 기존엔 매 틱 velocity.x/z를 입력값으로 즉시 스냅시켰다(0ms 가속) — 정지/시작/방향전환이
+// 전부 순간적이라 "로봇처럼 뚝뚝 끊긴다"는 조작감 피드백을 받았다. 겟앰프드 참고 요청에 맞춰
+// 목표 속도로 부드럽게 다가가는(ease) 가속을 追加한다. 그래도 안전마진(점프 거리 계산)이
+// 깨지지 않도록 최대속도까지 도달하는 시간은 아주 짧게(~110ms) 잡았다 — 체감상 부드럽지만
+// 달려서 점프하는 구간의 도약 거리에는 실질적인 영향이 없을 만큼 빠르다.
+const PLAYER_ACCEL = 140; // 초당 속도 변화량(units/s²) — 0->MAX_SPEED(15)까지 약 0.11초
 const PLAYER_RADIUS = 1.4;
 const GROUP_GROUND = 1;
 const GROUP_PLAYER = 2;
@@ -744,8 +750,11 @@ class Room {
       const grabMult = (p.grabbedBy ? GRABBED_SPEED_MULT : 1) * (p.grabbing ? GRABBING_SPEED_MULT : 1);
       const conscienceMult = 1 + p.conscienceCollected.size * CONSCIENCE_BONUS_PER_ITEM;
       const speedMult = (now < p.buffSpeedUntil ? p.buffSpeedMult : 1) * burdenMult * grabMult * conscienceMult;
-      p.body.velocity.x = p.input.x * MAX_SPEED * speedMult;
-      p.body.velocity.z = p.input.z * MAX_SPEED * speedMult;
+      const targetVX = p.input.x * MAX_SPEED * speedMult;
+      const targetVZ = p.input.z * MAX_SPEED * speedMult;
+      const maxDelta = PLAYER_ACCEL * simDt;
+      p.body.velocity.x += clampNum(targetVX - p.body.velocity.x, -maxDelta, maxDelta);
+      p.body.velocity.z += clampNum(targetVZ - p.body.velocity.z, -maxDelta, maxDelta);
 
       const withinCoyote = now - p.lastGroundedAt <= COYOTE_MS;
       const jumpRequested = p.input.jump || (now - p.jumpBufferedAt <= JUMP_BUFFER_MS);
